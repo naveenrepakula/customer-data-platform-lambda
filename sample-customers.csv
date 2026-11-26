@@ -1,0 +1,6 @@
+customer_id,customer_name,email
+101,Alice,ALICE@GMAIL.COM
+102,Bob,bob@gmail.com
+103,Charlie,invalid-email
+101,David,david@gmail.com
+104,,john@gmail.com

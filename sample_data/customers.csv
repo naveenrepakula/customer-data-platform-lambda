@@ -1,0 +1,7 @@
+customer_id,customer_name,email,city
+1001, Alice Johnson , ALICE@example.com ,Bengaluru
+1002,Bob Smith,bob@example.com,Hyderabad
+1002,Bob Smith,bob@example.com,Hyderabad
+1003,Carol Lee,carol@example.com,Chennai
+,Missing Id,missing@example.com,Pune
+1004, David Kumar , DAVID@EXAMPLE.COM ,Mumbai

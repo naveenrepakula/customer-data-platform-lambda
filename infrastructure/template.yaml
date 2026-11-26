@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda-only customer CSV pipeline
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+
+Resources:
+  RawBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'cdp-raw-${AWS::AccountId}-${AWS::Region}-${Environment}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  OutputBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'cdp-output-${AWS::AccountId}-${AWS::Region}-${Environment}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  FailureQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CustomerPipelineAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/cdp-customer-pipeline-${Environment}:*'
+              - Effect: Allow
+                Action: [s3:GetObject]
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::cdp-raw-${AWS::AccountId}-${AWS::Region}-${Environment}/incoming/*'
+              - Effect: Allow
+                Action: [s3:PutObject]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::cdp-output-${AWS::AccountId}-${AWS::Region}-${Environment}/processed/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::cdp-output-${AWS::AccountId}-${AWS::Region}-${Environment}/failed/*'
+              - Effect: Allow
+                Action: [sqs:SendMessage]
+                Resource: !GetAtt FailureQueue.Arn
+
+  CustomerPipelineFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'cdp-customer-pipeline-${Environment}'
+      Runtime: python3.11
+      Handler: handler.lambda_handler
+      CodeUri: ../lambda/validation/
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 180
+      MemorySize: 512
+      Environment:
+        Variables:
+          OUTPUT_BUCKET: !Ref OutputBucket
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt FailureQueue.Arn
+      Events:
+        NewCustomerFile:
+          Type: S3
+          Properties:
+            Bucket: !Ref RawBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: incoming/
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn: CustomerPipelineFunction
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/cdp-customer-pipeline-${Environment}'
+      RetentionInDays: 30
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'cdp-customer-pipeline-errors-${Environment}'
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CustomerPipelineFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  FailureQueueAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'cdp-customer-pipeline-failures-${Environment}'
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt FailureQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  RawBucketName:
+    Description: Upload source CSV files to incoming/.
+    Value: !Ref RawBucket
+  OutputBucketName:
+    Description: Processed CSV, rejected rows and reports.
+    Value: !Ref OutputBucket
+  LambdaFunctionName:
+    Value: !Ref CustomerPipelineFunction
+  FailureQueueUrl:
+    Value: !Ref FailureQueue

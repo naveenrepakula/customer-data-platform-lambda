@@ -1,0 +1,38 @@
+Folder PATH listing for volume Windows-SSD
+Volume serial number is 52BC-9C2B
+C:.
+¦   .env.example
+¦   .gitignore
+¦   Makefile
+¦   PROJECT_STRUCTURE.md
+¦   project_structure.txt
+¦   pyproject.toml
+¦   README.md
+¦   requirements.txt
+¦   
++---.github
+¦   +---workflows
+¦           deploy.yml
+¦           
++---infrastructure
+¦       template.yaml
+¦       
++---lambda
+¦   +---validation
+¦           handler.py
+¦           
++---sample_data
+¦       customers.csv
+¦       
++---scripts
+¦       deploy.sh
+¦       
++---tests
+    ¦   conftest.py
+    ¦   
+    +---integration
+    ¦       test_s3_lambda_pipeline.py
+    ¦       
+    +---unit
+            test_pipeline.py
+            

@@ -1,0 +1,26 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+.aws-sam/
+.pytest_cache/
+.coverage
+.vscode/
+.idea/
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# AWS SAM generated files
+.aws-sam/
+
+# AWS credentials
+.aws/

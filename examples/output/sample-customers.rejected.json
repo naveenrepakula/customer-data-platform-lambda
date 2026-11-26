@@ -1,0 +1,29 @@
+[
+  {
+    "line_number": 4,
+    "record": {
+      "customer_id": "103",
+      "customer_name": "Charlie",
+      "email": "invalid-email"
+    },
+    "reason": "email is missing or invalid"
+  },
+  {
+    "line_number": 5,
+    "record": {
+      "customer_id": "101",
+      "customer_name": "David",
+      "email": "david@gmail.com"
+    },
+    "reason": "duplicate customer_id"
+  },
+  {
+    "line_number": 6,
+    "record": {
+      "customer_id": "104",
+      "customer_name": "",
+      "email": "john@gmail.com"
+    },
+    "reason": "customer_name is missing"
+  }
+]

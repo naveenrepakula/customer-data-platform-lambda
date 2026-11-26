@@ -1,0 +1,16 @@
+{
+  "source_bucket": "cdp-raw-439701543859-ap-south-1-dev",
+  "source_key": "incoming/sample-customers.csv",
+  "input_count": 5,
+  "transformed_count": 2,
+  "rejected_count": 3,
+  "post_transformation_validation": {
+    "passed": true,
+    "row_count": 2,
+    "unique_customer_ids": 2,
+    "errors": []
+  },
+  "processed_output": "processed/customers/sample-customers.processed.csv",
+  "rejected_output": "failed/records/sample-customers.rejected.json",
+  "processed_at": "2026-11-26T09:07:41.680563+00:00"
+}
