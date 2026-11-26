@@ -1,0 +1,470 @@
+# Customer Data Platform – AWS Lambda Data Pipeline
+
+A serverless data engineering project that reads customer CSV files from Amazon S3, validates and transforms the records using Python, and stores the valid and rejected records separately.
+
+I built this project to understand how a data pipeline works in AWS, from receiving raw data to processing it, handling failures, and monitoring the execution.
+
+## Project Overview
+
+In this project, customer data is uploaded as a CSV file into an Amazon S3 bucket. The upload automatically triggers an AWS Lambda function.
+
+The Lambda function reads the CSV file, checks the customer records, cleans the data, and separates valid records from invalid records.
+
+- Valid records are stored as processed CSV files.
+- Invalid records are stored as JSON files.
+- Processing reports are stored in S3.
+- Technical Lambda invocation failures are handled using an SQS Dead Letter Queue (DLQ).
+- CloudWatch is used to monitor Lambda execution and errors.
+
+The infrastructure is created using AWS SAM and CloudFormation.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A[Customer CSV File] --> B[Raw S3 Bucket]
+    B -->|Object Created Event| C[AWS Lambda]
+    C --> D[Read CSV File]
+    D --> E[Validate and Transform]
+    E --> F{Record Valid?}
+    F -->|Yes| G[Processed CSV]
+    F -->|No| H[Rejected Records JSON]
+    G --> I[Output S3 Bucket]
+    H --> I
+    E --> J[Processing Report]
+    J --> I
+    C -.->|Invocation failures after retries| K[SQS Dead Letter Queue]
+    C --> L[CloudWatch Logs]
+    L --> M[CloudWatch Alarms]
+```
+
+## AWS Services Used
+
+| AWS Service | Purpose |
+|---|---|
+| Amazon S3 | Stores incoming CSV files and processed output files |
+| AWS Lambda | Reads, validates, and transforms customer records |
+| Amazon SQS | Stores failed asynchronous Lambda invocation events through a Dead Letter Queue |
+| Amazon CloudWatch | Stores Lambda logs and monitors errors |
+| AWS IAM | Controls permissions between AWS services |
+| AWS SAM | Builds and deploys the serverless application |
+| AWS CloudFormation | Creates and manages AWS resources |
+
+## How the Pipeline Works
+
+1. A customer CSV file is uploaded to the raw S3 bucket under the `incoming/` folder.
+2. S3 sends an ObjectCreated event to Lambda.
+3. Lambda reads the uploaded CSV file.
+4. The Python code checks the required columns.
+5. Customer records are cleaned and validated.
+6. Valid records are written to the processed folder.
+7. Invalid records are written to the rejected records folder.
+8. A processing report is created with the processing results.
+9. CloudWatch stores execution logs and monitors errors.
+10. If a Lambda asynchronous invocation continues to fail after retries, its event can be sent to the SQS Dead Letter Queue.
+
+## Project Structure
+
+```text
+customer-data-platform/
+│
+├── .github/
+│   └── workflows/
+│       └── deploy.yml
+│
+├── examples/
+│   ├── input/
+│   │   └── sample-customers.csv
+│   └── output/
+│       ├── sample-customers.processed.csv
+│       ├── sample-customers.rejected.json
+│       └── sample-customers.report.json
+│
+├── infrastructure/
+│   └── template.yaml
+│
+├── lambda/
+│   └── validation/
+│       └── handler.py
+│
+├── scripts/
+│   └── deploy.sh
+│
+├── tests/
+│   ├── unit/
+│   │   └── test_pipeline.py
+│   ├── integration/
+│   │   └── test_s3_lambda_pipeline.py
+│   └── conftest.py
+│
+├── sample_data/
+│   └── customers.csv
+│
+├── .env.example
+├── .gitignore
+├── Makefile
+├── PROJECT_STRUCTURE.md
+├── project_structure.txt
+├── pyproject.toml
+├── requirements.txt
+└── README.md
+```
+
+## Data Validation Rules
+
+The pipeline checks customer records before storing them.
+
+| Validation | Description |
+|---|---|
+| Required columns | Checks for `customer_id`, `customer_name`, and `email` |
+| Customer ID | Rejects missing customer IDs |
+| Customer name | Rejects missing customer names |
+| Email | Checks whether the email address has a valid format |
+| Duplicate records | Rejects duplicate customer IDs |
+| Data cleaning | Removes unnecessary spaces and converts email addresses to lowercase |
+
+### Example Input
+
+```csv
+customer_id,customer_name,email
+101,Alice,ALICE@GMAIL.COM
+102,Bob,bob@gmail.com
+103,Charlie,invalid-email
+101,David,david@gmail.com
+104,,john@gmail.com
+```
+
+### Expected Result
+
+- 2 valid records
+- 3 rejected records
+
+The valid records are stored in a processed CSV file. Rejected records are stored separately in JSON format with details about why they failed validation.
+
+## Output Files
+
+The pipeline writes the output into the output S3 bucket.
+
+```text
+output-bucket/
+│
+├── processed/
+│   └── customers/
+│       └── sample-customers.processed.csv
+│
+└── failed/
+    ├── records/
+    │   └── sample-customers.rejected.json
+    │
+    └── reports/
+        └── sample-customers.report.json
+```
+
+### 1. Processed Records
+
+Contains customer records that passed validation.
+
+### 2. Rejected Records
+
+Contains records that failed validation, along with rejection details.
+
+### 3. Processing Report
+
+Contains information about the processing results, such as record counts and processing status.
+
+## SQS Dead Letter Queue
+
+I used Amazon SQS as a Dead Letter Queue for failed Lambda asynchronous invocations.
+
+For example, if Lambda encounters a technical issue such as an unexpected exception or a service problem, AWS can retry the failed invocation.
+
+If the invocation still fails after the configured retry attempts, the event can be sent to the SQS Dead Letter Queue.
+
+This helps us identify and investigate processing failures.
+
+**Important difference:**
+
+- Invalid customer data, such as an incorrect email address, is stored in the rejected records folder in S3.
+- Technical Lambda invocation failures can be sent to the SQS Dead Letter Queue.
+
+The current project uses SQS for failure tracking. It does not include a separate consumer that automatically reprocesses messages from the queue.
+
+## Local Setup
+
+### Prerequisites
+
+Install the following tools before running the project:
+
+- Python 3.11
+- Git
+- AWS CLI
+- AWS SAM CLI
+- An AWS account
+- PowerShell (for the Windows commands below)
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/naveenrepakula/customer-data-platform-lambda.git
+```
+
+Move into the project directory:
+
+```bash
+cd customer-data-platform-lambda
+```
+
+### 2. Create a Virtual Environment
+
+```powershell
+python -m venv .venv
+```
+
+Activate it:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+### 3. Install Dependencies
+
+```powershell
+pip install -r requirements.txt
+```
+
+### 4. Run Unit Tests
+
+```powershell
+python -m pytest tests/ -v
+```
+
+This runs the available unit and integration-style tests.
+
+## AWS Deployment
+
+The project uses AWS SAM to build and deploy the Lambda application and infrastructure.
+
+### 1. Configure AWS CLI
+
+```powershell
+aws configure
+```
+
+Provide your AWS access key, secret key, default region, and output format when prompted.
+
+For this project, the deployment region is:
+
+```text
+ap-south-1
+```
+
+Use an IAM identity with the permissions required to deploy the CloudFormation stack and create the required resources.
+
+### 2. Validate the SAM Template
+
+```powershell
+sam validate --template-file .\infrastructure\template.yaml
+```
+
+To run additional lint checks:
+
+```powershell
+sam validate --lint --template-file .\infrastructure\template.yaml
+```
+
+### 3. Build the Application
+
+```powershell
+sam build --template-file .\infrastructure\template.yaml
+```
+
+### 4. Deploy the Application
+
+```powershell
+sam deploy --template-file .\infrastructure\template.yaml --stack-name customer-data-platform-dev --region ap-south-1 --capabilities CAPABILITY_IAM
+```
+
+The deployment creates the required AWS resources using CloudFormation.
+
+## Testing the Pipeline in AWS
+
+After successful deployment, upload a sample CSV file to the raw S3 bucket.
+
+### 1. Upload a Sample CSV
+
+```powershell
+aws s3 cp .\examples\input\sample-customers.csv s3://YOUR-RAW-BUCKET/incoming/sample-customers.csv
+```
+
+Replace `YOUR-RAW-BUCKET` with the actual raw bucket name created by your deployment.
+
+### 2. Check Processed Records
+
+```powershell
+aws s3 ls s3://YOUR-OUTPUT-BUCKET/processed/customers/
+```
+
+### 3. Check Rejected Records
+
+```powershell
+aws s3 ls s3://YOUR-OUTPUT-BUCKET/failed/records/
+```
+
+### 4. Check Processing Reports
+
+```powershell
+aws s3 ls s3://YOUR-OUTPUT-BUCKET/failed/reports/
+```
+
+### 5. View Processed CSV Data
+
+```powershell
+aws s3 cp s3://YOUR-OUTPUT-BUCKET/processed/customers/sample-customers.processed.csv -
+```
+
+### 6. View Rejected Records
+
+```powershell
+aws s3 cp s3://YOUR-OUTPUT-BUCKET/failed/records/sample-customers.rejected.json -
+```
+
+## Monitoring and Troubleshooting
+
+Amazon CloudWatch is used to monitor Lambda execution.
+
+### View Lambda Logs
+
+```powershell
+aws logs tail /aws/lambda/cdp-customer-pipeline-dev --since 10m --follow --region ap-south-1
+```
+
+### Check Lambda Function
+
+```powershell
+aws lambda get-function --function-name cdp-customer-pipeline-dev --region ap-south-1
+```
+
+### Check SQS Queue
+
+```powershell
+aws sqs get-queue-attributes --queue-url YOUR-QUEUE-URL --attribute-names All --region ap-south-1
+```
+
+### Production Issues to Consider
+
+| Issue | How to Investigate |
+|---|---|
+| Lambda execution failure | Check CloudWatch error logs |
+| Incorrect CSV format | Check required column validation |
+| Invalid customer records | Check the rejected records in S3 |
+| S3 permission issue | Review the Lambda IAM execution role |
+| Lambda timeout | Check execution duration and increase timeout or optimize processing |
+| Failed asynchronous invocation | Check the SQS Dead Letter Queue |
+| Duplicate S3 events | Check whether the same file was processed more than once |
+
+## Testing
+
+The project includes tests for the data processing logic and an integration-style test using a mocked S3 client.
+
+The tests cover:
+
+- CSV header validation
+- Customer record transformation
+- Email validation
+- Duplicate customer ID handling
+- Missing required values
+- Rejected record generation
+- Output file generation
+- S3 interaction through a fake client
+
+Run the tests using:
+
+```powershell
+python -m pytest tests/ -v
+```
+
+The integration-style test does not deploy or call real AWS resources.
+
+## CI/CD
+
+The repository contains a GitHub Actions workflow:
+
+```text
+.github/workflows/deploy.yml
+```
+
+The workflow is intended to run tests and deploy the application through AWS SAM.
+
+Before automatic AWS deployment can work, configure the required GitHub repository variable:
+
+```text
+AWS_REGION
+AWS_ROLE_TO_ASSUME
+```
+
+The AWS IAM role must also have a configured GitHub Actions OIDC trust relationship and the permissions needed for deployment.
+
+The presence of the workflow file alone does not mean that automatic deployment is already configured.
+
+## Security
+
+The infrastructure includes the following security settings:
+
+- S3 buckets have public access blocked.
+- S3 buckets use server-side encryption.
+- S3 bucket versioning is enabled.
+- IAM roles provide the permissions required by Lambda.
+- SQS uses server-side encryption.
+- AWS credentials should not be committed to GitHub.
+- Environment-specific configuration is kept separate from source code.
+
+## Current Project Limitations
+
+This is a learning project built to demonstrate a serverless CSV processing pipeline. There are some limitations that I would improve in a larger production system.
+
+1. **Large CSV files:** The current Lambda reads the CSV file into memory. For very large files, I would consider streaming or using AWS Glue.
+2. **Duplicate S3 events:** S3 event notifications can be delivered more than once. A production system should use an idempotency mechanism to prevent duplicate processing.
+3. **Output naming:** Files with the same base filename could overwrite each other's output. A production version should use unique file identifiers or preserve the original path.
+4. **SQS reprocessing:** The project has a Dead Letter Queue for failed Lambda invocations, but it does not yet have an automatic replay consumer.
+5. **Notifications:** CloudWatch alarms are configured, but email notifications through SNS are not configured.
+6. **Testing:** The integration-style test uses a fake S3 client rather than testing against deployed AWS resources.
+
+## Future Improvements
+
+Some improvements I would like to add:
+
+- Add automated SQS message reprocessing.
+- Configure SNS notifications for CloudWatch alarms.
+- Add better idempotency handling.
+- Support large CSV files.
+- Add more integration tests.
+- Add data quality metrics.
+- Add automated deployment using GitHub Actions and AWS OIDC.
+- Add a dashboard for pipeline monitoring.
+
+## Useful Commands
+
+| Task | Command |
+|---|---|
+| Run tests | `python -m pytest tests/ -v` |
+| Validate template | `sam validate --template-file .\infrastructure\template.yaml` |
+| Build project | `sam build --template-file .\infrastructure\template.yaml` |
+| Deploy project | `sam deploy --template-file .\infrastructure\template.yaml --stack-name customer-data-platform-dev --region ap-south-1 --capabilities CAPABILITY_IAM` |
+| View Lambda logs | `aws logs tail /aws/lambda/cdp-customer-pipeline-dev --since 10m --region ap-south-1` |
+| List S3 files | `aws s3 ls s3://YOUR-BUCKET/` |
+
+## Author
+
+**Naveen Repakula**
+
+Data Engineer
+
+GitHub: https://github.com/naveenrepakula
+
+## Project Repository
+
+https://github.com/naveenrepakula/customer-data-platform-lambda
+
+---
+
+This project helped me understand how to build and deploy a serverless data pipeline using Python and AWS services. It also gave me hands-on practice with data validation, error handling, testing, monitoring, and cloud infrastructure deployment.
